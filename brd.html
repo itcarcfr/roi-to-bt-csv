@@ -342,7 +342,8 @@ function renderTable() {
   currentRows.forEach((row) => {
     const tr = document.createElement('tr');
     const missingCui = row.Treasury && !row.BeneficiaryCUI.trim();
-    if (row._wrongSourceBank || missingCui) tr.classList.add('row-bad');
+    const missingBic = !row.BeneficiaryBIC.trim();
+    if (row._wrongSourceBank || missingCui || missingBic) tr.classList.add('row-bad');
     else if (!row._knownBenefBank) tr.classList.add('row-warn');
     else if (row.Treasury) tr.classList.add('row-treasury');
     if (row._excluded) tr.classList.add('row-excluded');
@@ -398,51 +399,89 @@ function updateSummary() {
   const wrongBank = currentRows.filter(r => r._wrongSourceBank).length;
   const unknownBenef = currentRows.filter(r => !r._knownBenefBank).length;
   const missingCui = currentRows.filter(r => r.Treasury && !r.BeneficiaryCUI.trim()).length;
+  const missingBic = currentRows.filter(r => !r._excluded && !r.BeneficiaryBIC.trim()).length;
   let msg = `${total} plăți găsite în fișier, ${included} vor fi incluse în XML.`;
   if (wrongBank) msg += ` ⚠ ${wrongBank} au cont sursă la altă bancă decât BRD (marcate roșu).`;
   if (unknownBenef) msg += ` ⚠ ${unknownBenef} au un cod de bancă beneficiar necunoscut (marcate portocaliu).`;
   if (missingCui) msg += ` ⚠ ${missingCui} plăți către Trezorerie nu au CUI/CNP beneficiar completat (obligatoriu).`;
+  if (missingBic) msg += ` ⛔ ${missingBic} nu au niciun BIC completat — BRD respinge fișierul cu XML gol pe <BIC>, completează manual în tabel.`;
   document.getElementById('statSummary').textContent = msg;
 }
 
 function renderBicEditor() {
   const unknownCodes = [...new Set(currentRows.filter(r => !r._knownBenefBank && r._beneficiaryBankCode).map(r => r._beneficiaryBankCode))];
+  const noCodeRows = currentRows.filter(r => !r._excluded && !r.BeneficiaryBIC.trim() && !r._beneficiaryBankCode);
   const container = document.getElementById('bicEditor');
   container.innerHTML = '';
-  if (!unknownCodes.length) return;
-  const label = document.createElement('div');
-  label.style.fontSize = '13px';
-  label.style.fontWeight = '600';
-  label.style.width = '100%';
-  label.textContent = 'Completează BIC (8 caractere) pentru codurile de bancă necunoscute:';
-  container.appendChild(label);
-  unknownCodes.forEach(code => {
-    const wrap = document.createElement('div');
-    wrap.style.display = 'flex';
-    wrap.style.alignItems = 'center';
-    wrap.style.gap = '6px';
-    const tag = document.createElement('span');
-    tag.textContent = code + ' →';
-    tag.style.fontWeight = '600';
-    const input = document.createElement('input');
-    input.placeholder = 'ex: XXXXROBU';
-    input.addEventListener('change', () => {
-      const val = input.value.trim().toUpperCase();
-      if (!val) return;
-      bicMap[code] = val;
-      saveBicMap(bicMap);
-      currentRows.forEach(r => {
-        if (r._beneficiaryBankCode === code) {
-          r.BeneficiaryBIC = val;
-          r._knownBenefBank = true;
-        }
+  if (!unknownCodes.length && !noCodeRows.length) return;
+
+  if (unknownCodes.length) {
+    const label = document.createElement('div');
+    label.style.fontSize = '13px';
+    label.style.fontWeight = '600';
+    label.style.width = '100%';
+    label.textContent = 'Completează BIC (8 caractere) pentru codurile de bancă necunoscute:';
+    container.appendChild(label);
+    unknownCodes.forEach(code => {
+      const wrap = document.createElement('div');
+      wrap.style.display = 'flex';
+      wrap.style.alignItems = 'center';
+      wrap.style.gap = '6px';
+      const tag = document.createElement('span');
+      tag.textContent = code + ' →';
+      tag.style.fontWeight = '600';
+      const input = document.createElement('input');
+      input.placeholder = 'ex: XXXXROBU';
+      input.addEventListener('change', () => {
+        const val = input.value.trim().toUpperCase();
+        if (!val) return;
+        bicMap[code] = val;
+        saveBicMap(bicMap);
+        currentRows.forEach(r => {
+          if (r._beneficiaryBankCode === code) {
+            r.BeneficiaryBIC = val;
+            r._knownBenefBank = true;
+          }
+        });
+        renderTable();
       });
-      renderTable();
+      wrap.appendChild(tag);
+      wrap.appendChild(input);
+      container.appendChild(wrap);
     });
-    wrap.appendChild(tag);
-    wrap.appendChild(input);
-    container.appendChild(wrap);
-  });
+  }
+
+  if (noCodeRows.length) {
+    const label2 = document.createElement('div');
+    label2.style.fontSize = '13px';
+    label2.style.fontWeight = '600';
+    label2.style.width = '100%';
+    label2.style.marginTop = '10px';
+    label2.style.color = '#8a1c1c';
+    label2.textContent = 'ROI-ul nu are deloc un cod de bancă pentru aceste plăți (câmp :57A: lipsă) — completează manual BIC-ul beneficiarului pentru fiecare, altfel BRD respinge fișierul:';
+    container.appendChild(label2);
+    noCodeRows.forEach(row => {
+      const wrap = document.createElement('div');
+      wrap.style.display = 'flex';
+      wrap.style.alignItems = 'center';
+      wrap.style.gap = '6px';
+      const tag = document.createElement('span');
+      tag.textContent = `ordin ${row.ref} (${row.BeneficiaryName || 'fara nume'}) →`;
+      tag.style.fontWeight = '600';
+      const input = document.createElement('input');
+      input.placeholder = 'ex: XXXXROBU';
+      input.addEventListener('change', () => {
+        const val = input.value.trim().toUpperCase();
+        if (!val) return;
+        row.BeneficiaryBIC = val;
+        row._knownBenefBank = true;
+        renderTable();
+      });
+      wrap.appendChild(tag);
+      wrap.appendChild(input);
+      container.appendChild(wrap);
+    });
+  }
 }
 
 function nowIsoDateTime() {
@@ -655,6 +694,11 @@ dropzone.addEventListener('drop', e => { if (e.dataTransfer.files[0]) handleFile
 });
 
 document.getElementById('downloadBtn').addEventListener('click', () => {
+  const missingBicRows = currentRows.filter(r => !r._excluded && !r.BeneficiaryBIC.trim());
+  if (missingBicRows.length) {
+    alert(`${missingBicRows.length} plată/plăți (${missingBicRows.map(r => r.ref).join(', ')}) nu au niciun BIC completat. BRD respinge întregul fișier când găsește un tag <BIC> gol — completează BIC-ul (vezi câmpurile portocalii/roșii de sub tabel) înainte să descarci.`);
+    return;
+  }
   const missingCui = currentRows.some(r => !r._excluded && r.Treasury && !r.BeneficiaryCUI.trim());
   if (missingCui) {
     if (!confirm('Există plăți către Trezorerie fără CUI/CNP beneficiar completat. BRD va respinge acel fișier. Continui totuși descărcarea (ca să corectezi manual în XML), sau anulezi ca să completezi în tabel?')) {
