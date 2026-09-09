@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROI → XML pentru BRD</title>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --card: #ffffff;
+    --text: #1c2733;
+    --muted: #5b6b7a;
+    --border: #d7dee4;
+    --accent: #0f6b5c;
+    --accent-dark: #0b5347;
+    --warn-bg: #fff4e5;
+    --warn-border: #f0b429;
+    --err-bg: #fdecec;
+    --err-border: #e5484d;
+    --ok-bg: #e8f7f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); margin: 0 0 12px; font-size: 14px; }
+  .nav { font-size: 13px; margin-bottom: 16px; }
+  .nav a { color: var(--accent-dark); text-decoration: none; font-weight: 600; }
+  .nav a:hover { text-decoration: underline; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 36px 20px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .dropzone.drag { border-color: var(--accent); background: var(--ok-bg); }
+  .dropzone input { display: none; }
+  .dropzone strong { color: var(--accent-dark); }
+  .file-name { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .note {
+    font-size: 13px;
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 14px 0 0;
+  }
+  .error-box {
+    font-size: 13px;
+    background: var(--err-bg);
+    border: 1px solid var(--err-border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 14px 0 0;
+    color: #8a1c1c;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border: 1px solid var(--border); padding: 6px 7px; text-align: left; white-space: nowrap; }
+  th { background: #eef2f5; position: sticky; top: 0; }
+  td[contenteditable="true"] { background: #fbfdfe; cursor: text; }
+  td[contenteditable="true"]:focus { outline: 2px solid var(--accent); background: #fff; }
+  .table-scroll { overflow-x: auto; max-height: 520px; overflow-y: auto; border-radius: 8px; }
+  .row-bad { background: var(--err-bg) !important; }
+  .row-warn { background: var(--warn-bg) !important; }
+  .row-treasury { background: #eef3ff !important; }
+  .row-excluded { opacity: .4; text-decoration: line-through; }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  button {
+    font: inherit;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 16px;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+  button.secondary { background: #e3e8ec; color: var(--text); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .stat { font-size: 13px; color: var(--muted); }
+  .legend { font-size: 12px; color: var(--muted); margin-top: 10px; display: flex; gap: 16px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 30px; }
+  .bic-editor { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .bic-editor input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font: inherit; width: 110px; }
+  .checkbox-cell { text-align: center; }
+  .payer-box { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .payer-box label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .payer-box input { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="nav"><a href="index.html">← Convertor ROI → CSV (Banca Transilvania)</a></div>
+  <h1>Convertor ROI → XML pentru BRD</h1>
+  <p class="subtitle">Încarcă un fișier <strong>.ROI</strong>, verifică rândurile generate, corectează manual ce e nevoie, apoi descarcă XML-ul (format ISO 20022 pain.001.001.03, tip <strong>RXI</strong> — plăți RON și Trezorerie) gata de încărcat în BRD@ffice MultiX. Totul se procesează local, în acest browser — niciun fișier nu este trimis pe un server.</p>
+
+  <div class="card">
+    <div class="dropzone" id="dropzone">
+      <div>📄 Trage aici fișierul <strong>.ROI</strong> sau apasă ca să-l alegi</div>
+      <input type="file" id="fileInput" accept=".roi,.txt">
+      <div class="file-name" id="fileName"></div>
+    </div>
+    <div id="parseError"></div>
+  </div>
+
+  <div class="card" id="resultsCard" style="display:none;">
+    <div class="payer-box">
+      <div>
+        <label>Nume plătitor (Dbtr/Nm)</label>
+        <input type="text" id="payerName">
+      </div>
+      <div>
+        <label>CUI plătitor (obligatoriu doar pt. plăți Trezorerie)</label>
+        <input type="text" id="payerCui">
+      </div>
+      <div>
+        <label>Cont plătitor la BRD (IBAN sursă)</label>
+        <input type="text" id="payerIban">
+      </div>
+    </div>
+    <div class="toolbar">
+      <span class="stat" id="statSummary"></span>
+      <button id="downloadBtn">⬇ Descarcă XML</button>
+      <button class="secondary" id="excludeUnknownBtn">Exclude rândurile cu cont sursă la altă bancă</button>
+    </div>
+    <div class="table-scroll">
+      <table id="previewTable">
+        <thead>
+          <tr>
+            <th></th>
+            <th>EndToEndId</th>
+            <th>SourceIBAN</th>
+            <th>TargetIBAN</th>
+            <th>BeneficiaryName</th>
+            <th>BeneficiaryBIC</th>
+            <th>Trezorerie?</th>
+            <th>CUI beneficiar</th>
+            <th>Cod NEP (opțional, 23 cifre)</th>
+            <th>Amount</th>
+            <th>Details</th>
+            <th>Date</th>
+            <th>Urgent</th>
+          </tr>
+        </thead>
+        <tbody id="previewBody"></tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--err-bg);border:1px solid var(--err-border)"></span> cont sursă la altă bancă decât BRD, sau plată Trezorerie fără CUI beneficiar completat — nu poate fi trimis așa</span>
+      <span><span class="swatch" style="background:var(--warn-bg);border:1px solid var(--warn-border)"></span> cod de bancă beneficiar necunoscut — completează manual BIC-ul</span>
+      <span><span class="swatch" style="background:#eef3ff;border:1px solid #c8d6f5"></span> plată către Trezorerie (detectat automat din IBAN beneficiar)</span>
+    </div>
+    <div class="note">
+      <strong>De verificat înainte de încărcare în BRD@ffice:</strong> suma (Amount) e calculată din cifrele ROI presupunând RON întregi (ex. „7130" → 7130.00) — corectează manual dacă vreo sumă are de fapt subunități. Plățile către Trezorerie <strong>necesită obligatoriu CUI/CNP-ul beneficiarului</strong> — completează-l manual în tabel, altfel acel rând nu poate fi trimis către BRD. Codul NEP (dacă există) trebuie să aibă exact 23 de cifre.
+    </div>
+    <div class="bic-editor" id="bicEditor"></div>
+  </div>
+
+  <footer>Format BRD@ffice MultiX: XML ISO 20022 pain.001.001.03, tip RXI (plăți RON și Trezorerie). Codul BIC al BRD este întotdeauna BRDEROBU.</footer>
+</div>
+
+<script>
+// Cod de banca (4 litere din ROI) -> BIC pe 8 caractere, asa cum il cere formatul BRD.
+const DEFAULT_BIC_MAP = {
+  BTRL: 'BTRLRO22',
+  TREZ: 'TREZROBU',
+  RNCB: 'RNCBROBU',
+  BRDE: 'BRDEROBU',
+  INGB: 'INGBROBU',
+  RZBR: 'RZBRROBU',
+  CECE: 'CECEROBU',
+  BPOS: 'BPOSROBU',
+  PIRB: 'PIRBROBU',
+  CRDB: 'CRDBROBU',
+  UGBI: 'UGBIROBU',
+};
+const STORAGE_KEY = 'roi2brd_bic_map_v1';
+const OWN_BIC = 'BRDEROBU';
+
+function loadBicMap() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    return Object.assign({}, DEFAULT_BIC_MAP, saved);
+  } catch (e) {
+    return Object.assign({}, DEFAULT_BIC_MAP);
+  }
+}
+function saveBicMap(map) {
+  const extra = {};
+  for (const k in map) {
+    if (!(k in DEFAULT_BIC_MAP) || map[k] !== DEFAULT_BIC_MAP[k]) extra[k] = map[k];
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(extra));
+}
+let bicMap = loadBicMap();
+
+// XML nu accepta &, <, > brute in continutul unui tag.
+function xmlEscape(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// caracterele permise de BRD (vezi sheet "Reguli generale"): litere fara diacritice, cifre, / - ? : ( ) . , ' + spatiu
+function sanitizeBrdText(value) {
+  return String(value || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // scoate diacriticele (ă -> a, ș -> s etc.)
+    .replace(/[^A-Za-z0-9/\-?:().,'+ ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseROI(text) {
+  const lines = text.split(/\r\n|\r|\n/);
+  const tagRe = /^:(\w{2}[A-Z]?):(.*)$/;
+  const entries = [];
+  for (const raw of lines) {
+    const m = raw.match(tagRe);
+    if (m) {
+      entries.push({ tag: m[1], lines: [m[2]] });
+    } else if (entries.length && raw.trim() !== '') {
+      entries[entries.length - 1].lines.push(raw.trim());
+    }
+  }
+  const header = {};
+  const orders = [];
+  let current = null;
+  for (const e of entries) {
+    if (e.tag === '20') {
+      current = { ref: e.lines[0].trim(), fields: {} };
+      orders.push(current);
+      continue;
+    }
+    if (!current) {
+      header[e.tag] = e.lines;
+    } else {
+      current.fields[e.tag] = e.lines;
+    }
+  }
+  return { header, orders };
+}
+
+function extractIban(rawLine) {
+  if (!rawLine) return '';
+  const m = rawLine.match(/[A-Z]{2}\d{2}[A-Z0-9]+/);
+  return m ? m[0] : rawLine.replace(/^\/[A-Z]\//, '').trim();
+}
+
+function yymmddToIsoDate(s) {
+  if (!s || s.length < 6) return '';
+  const yy = s.slice(0, 2), mm = s.slice(2, 4), dd = s.slice(4, 6);
+  return `20${yy}-${mm}-${dd}`;
+}
+
+function isTreasuryIban(iban) {
+  // conform regulilor BRD: "TREZ" pe pozitiile 5-8 ale IBAN-ului beneficiarului
+  return String(iban || '').slice(4, 8).toUpperCase() === 'TREZ';
+}
+
+function padEndToEndId(ref, length) {
+  const digits = String(ref || '').replace(/\D/g, '') || '0';
+  if (digits.length >= length) return digits.slice(-length);
+  return digits.padStart(length, '0');
+}
+
+function buildRows(parsed) {
+  const rows = [];
+  for (const order of parsed.orders) {
+    const f = order.fields;
+    const line32A = (f['32A'] || [''])[0];
+    const dateStr = line32A.slice(0, 6);
+    const rest = line32A.slice(6);
+    const ccyMatch = rest.match(/^([A-Z]{3})(.*)$/);
+    const amountDigits = ccyMatch ? ccyMatch[2] : rest;
+    const amountNum = amountDigits ? parseInt(amountDigits, 10) : 0;
+    const amount = amountDigits ? `${amountNum}.00` : '';
+
+    const sourceIban = extractIban((f['52A'] || [])[0] || '');
+    const sourceBankCode = ((f['52A'] || [])[1] || '').trim().toUpperCase();
+
+    const beneficiaryLines59 = f['59'] || [];
+    const targetIban = extractIban(beneficiaryLines59[0] || '');
+    const beneficiaryName = sanitizeBrdText(beneficiaryLines59.slice(1).join(' '));
+
+    const beneficiaryBankCode = ((f['57A'] || [])[0] || '').trim().toUpperCase();
+    const detailsText = sanitizeBrdText((f['70'] || []).join(' '));
+
+    const knownBenefBank = beneficiaryBankCode in bicMap;
+    const treasury = isTreasuryIban(targetIban) || beneficiaryBankCode === 'TREZ';
+
+    rows.push({
+      ref: order.ref,
+      SourceIBAN: sourceIban,
+      TargetIBAN: targetIban,
+      BeneficiaryName: beneficiaryName,
+      BeneficiaryBIC: bicMap[beneficiaryBankCode] || '',
+      Treasury: treasury,
+      BeneficiaryCUI: '',
+      NEP: '',
+      Amount: amount,
+      Details: detailsText,
+      Date: yymmddToIsoDate(dateStr),
+      Urgent: 'F',
+      _amountNum: amountNum,
+      _sourceBankCode: sourceBankCode,
+      _beneficiaryBankCode: beneficiaryBankCode,
+      _knownBenefBank: knownBenefBank,
+      _wrongSourceBank: sourceBankCode !== 'BRDE',
+      _excluded: false,
+    });
+  }
+  return rows;
+}
+
+const COLUMNS = ['ref','SourceIBAN','TargetIBAN','BeneficiaryName','BeneficiaryBIC','Treasury','BeneficiaryCUI','NEP','Amount','Details','Date','Urgent'];
+
+let currentRows = [];
+let headerInfo = { payerName: '', payerCui: '', payerIban: '' };
+
+function renderTable() {
+  const tbody = document.getElementById('previewBody');
+  tbody.innerHTML = '';
+  currentRows.forEach((row) => {
+    const tr = document.createElement('tr');
+    const missingCui = row.Treasury && !row.BeneficiaryCUI.trim();
+    if (row._wrongSourceBank || missingCui) tr.classList.add('row-bad');
+    else if (!row._knownBenefBank) tr.classList.add('row-warn');
+    else if (row.Treasury) tr.classList.add('row-treasury');
+    if (row._excluded) tr.classList.add('row-excluded');
+
+    const tdCheck = document.createElement('td');
+    tdCheck.className = 'checkbox-cell';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !row._excluded;
+    cb.title = 'Include în XML';
+    cb.addEventListener('change', () => { row._excluded = !cb.checked; renderTable(); });
+    tdCheck.appendChild(cb);
+    tr.appendChild(tdCheck);
+
+    COLUMNS.forEach(col => {
+      const td = document.createElement('td');
+      if (col === 'Treasury') {
+        td.textContent = row.Treasury ? 'DA' : 'nu';
+        td.style.fontWeight = '700';
+        td.style.color = row.Treasury ? '#2451c9' : 'inherit';
+      } else if (col === 'Urgent') {
+        td.contentEditable = 'true';
+        td.textContent = row[col];
+        td.addEventListener('input', () => { row[col] = td.textContent.trim().toUpperCase() === 'T' ? 'T' : 'F'; });
+      } else {
+        td.contentEditable = 'true';
+        td.textContent = row[col];
+        td.addEventListener('input', () => { row[col] = sanitizeCell(col, td.textContent); });
+        td.addEventListener('blur', () => { td.textContent = row[col]; renderTable(); });
+      }
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+  updateSummary();
+  renderBicEditor();
+}
+
+function sanitizeCell(col, value) {
+  if (col === 'BeneficiaryName' || col === 'Details') {
+    return sanitizeBrdText(value);
+  }
+  if (col === 'BeneficiaryCUI' || col === 'NEP') {
+    return String(value || '').replace(/\D/g, '');
+  }
+  return String(value || '').trim();
+}
+
+function updateSummary() {
+  const total = currentRows.length;
+  const included = currentRows.filter(r => !r._excluded).length;
+  const wrongBank = currentRows.filter(r => r._wrongSourceBank).length;
+  const unknownBenef = currentRows.filter(r => !r._knownBenefBank).length;
+  const missingCui = currentRows.filter(r => r.Treasury && !r.BeneficiaryCUI.trim()).length;
+  let msg = `${total} plăți găsite în fișier, ${included} vor fi incluse în XML.`;
+  if (wrongBank) msg += ` ⚠ ${wrongBank} au cont sursă la altă bancă decât BRD (marcate roșu).`;
+  if (unknownBenef) msg += ` ⚠ ${unknownBenef} au un cod de bancă beneficiar necunoscut (marcate portocaliu).`;
+  if (missingCui) msg += ` ⚠ ${missingCui} plăți către Trezorerie nu au CUI/CNP beneficiar completat (obligatoriu).`;
+  document.getElementById('statSummary').textContent = msg;
+}
+
+function renderBicEditor() {
+  const unknownCodes = [...new Set(currentRows.filter(r => !r._knownBenefBank && r._beneficiaryBankCode).map(r => r._beneficiaryBankCode))];
+  const container = document.getElementById('bicEditor');
+  container.innerHTML = '';
+  if (!unknownCodes.length) return;
+  const label = document.createElement('div');
+  label.style.fontSize = '13px';
+  label.style.fontWeight = '600';
+  label.style.width = '100%';
+  label.textContent = 'Completează BIC (8 caractere) pentru codurile de bancă necunoscute:';
+  container.appendChild(label);
+  unknownCodes.forEach(code => {
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '6px';
+    const tag = document.createElement('span');
+    tag.textContent = code + ' →';
+    tag.style.fontWeight = '600';
+    const input = document.createElement('input');
+    input.placeholder = 'ex: XXXXROBU';
+    input.addEventListener('change', () => {
+      const val = input.value.trim().toUpperCase();
+      if (!val) return;
+      bicMap[code] = val;
+      saveBicMap(bicMap);
+      currentRows.forEach(r => {
+        if (r._beneficiaryBankCode === code) {
+          r.BeneficiaryBIC = val;
+          r._knownBenefBank = true;
+        }
+      });
+      renderTable();
+    });
+    wrap.appendChild(tag);
+    wrap.appendChild(input);
+    container.appendChild(wrap);
+  });
+}
+
+function nowIsoDateTime() {
+  return new Date().toISOString().slice(0, 19);
+}
+function nowStamp() {
+  const d = new Date();
+  const p = (n, l = 2) => String(n).padStart(l, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+function buildCdtTrfTxInf(row) {
+  const highValue = row._amountNum > 50000;
+  const endToEndLen = (row.Treasury || highValue) ? 11 : 16;
+  const endToEndId = padEndToEndId(row.ref, endToEndLen);
+  const instrPrty = row.Urgent === 'T' ? 'HIGH' : 'NORM';
+  const bic = xmlEscape(row.BeneficiaryBIC || '');
+
+  let ustrd = row.Details;
+  if (row.Treasury && row.NEP && row.NEP.trim()) {
+    ustrd = `${row.NEP.trim()}/${row.Details}`;
+  }
+  ustrd = ustrd.slice(0, 140);
+
+  let cdtrIdBlock = '';
+  if (row.Treasury) {
+    cdtrIdBlock = `
+        <Id>
+          <OrgId>
+            <Othr>
+              <Id>${xmlEscape(row.BeneficiaryCUI)}</Id>
+            </Othr>
+          </OrgId>
+        </Id>`;
+  }
+
+  const purpBlock = row.Treasury ? `
+        <Purp>
+          <Cd>TAXS</Cd>
+        </Purp>` : '';
+
+  const chrgBrBlock = row.Treasury ? '' : `
+        <ChrgBr>SHAR</ChrgBr>`;
+
+  return `      <CdtTrfTxInf>
+        <PmtId>
+          <EndToEndId>${endToEndId}</EndToEndId>
+        </PmtId>
+        <PmtTpInf>
+          <InstrPrty>${instrPrty}</InstrPrty>
+        </PmtTpInf>
+        <Amt>
+          <InstdAmt Ccy="RON">${row.Amount}</InstdAmt>
+        </Amt>${chrgBrBlock}
+        <CdtrAgt>
+          <FinInstnId>
+            <BIC>${bic}</BIC>
+          </FinInstnId>
+        </CdtrAgt>
+        <Cdtr>
+          <Nm>${xmlEscape(row.BeneficiaryName)}</Nm>${cdtrIdBlock}
+        </Cdtr>
+        <CdtrAcct>
+          <Id>
+            <IBAN>${xmlEscape(row.TargetIBAN)}</IBAN>
+          </Id>
+        </CdtrAcct>${purpBlock}
+        <RmtInf>
+          <Ustrd>${xmlEscape(ustrd)}</Ustrd>
+        </RmtInf>
+      </CdtTrfTxInf>`;
+}
+
+function buildPmtInf(rows, treasury, payer) {
+  const total = rows.reduce((s, r) => s + r._amountNum, 0).toFixed(2);
+  const dateCounts = {};
+  rows.forEach(r => { dateCounts[r.Date] = (dateCounts[r.Date] || 0) + 1; });
+  const mainDate = Object.keys(dateCounts).sort((a, b) => dateCounts[b] - dateCounts[a])[0] || '';
+  const stamp = nowStamp();
+  const pmtInfId = `${stamp}PMT${treasury ? 'T' : 'C'}`;
+
+  const dbtrIdBlock = treasury ? `
+      <Id>
+        <OrgId>
+          <Othr>
+            <Id>${xmlEscape(payer.payerCui)}</Id>
+          </Othr>
+        </OrgId>
+      </Id>` : '';
+
+  const dbtrAgtInner = treasury
+    ? `<Othr>
+            <Id>${OWN_BIC}</Id>
+          </Othr>`
+    : `<BIC>${OWN_BIC}</BIC>`;
+
+  const txBlocks = rows.map(buildCdtTrfTxInf).join('\n');
+
+  return { xml: `    <PmtInf>
+      <PmtInfId>${pmtInfId}</PmtInfId>
+      <PmtMtd>TRF</PmtMtd>
+      <BtchBookg>${treasury ? 'false' : 'true'}</BtchBookg>
+      <NbOfTxs>${rows.length}</NbOfTxs>
+      <CtrlSum>${total}</CtrlSum>
+      <ReqdExctnDt>${mainDate}</ReqdExctnDt>
+      <Dbtr>
+        <Nm>${xmlEscape(payer.payerName)}</Nm>${dbtrIdBlock}
+      </Dbtr>
+      <DbtrAcct>
+        <Id>
+          <IBAN>${xmlEscape(payer.payerIban)}</IBAN>
+        </Id>
+      </DbtrAcct>
+      <DbtrAgt>
+        <FinInstnId>
+          ${dbtrAgtInner}
+        </FinInstnId>
+      </DbtrAgt>
+${txBlocks}
+    </PmtInf>`, total: parseFloat(total), count: rows.length };
+}
+
+function rowsToXml(rows, payer) {
+  const included = rows.filter(r => !r._excluded);
+  const treasuryRows = included.filter(r => r.Treasury);
+  const otherRows = included.filter(r => !r.Treasury);
+
+  const pmtInfBlocks = [];
+  let totalSum = 0, totalCount = 0;
+  if (otherRows.length) {
+    const b = buildPmtInf(otherRows, false, payer);
+    pmtInfBlocks.push(b.xml);
+    totalSum += b.total;
+    totalCount += b.count;
+  }
+  if (treasuryRows.length) {
+    const b = buildPmtInf(treasuryRows, true, payer);
+    pmtInfBlocks.push(b.xml);
+    totalSum += b.total;
+    totalCount += b.count;
+  }
+
+  const msgId = `CARCFR${nowStamp()}`;
+
+  return `<?xml version="1.0" encoding="utf-8" ?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03 pain.001.001.03.xsd">
+  <CstmrCdtTrfInitn>
+    <GrpHdr>
+      <MsgId>${msgId}</MsgId>
+      <CreDtTm>${nowIsoDateTime()}</CreDtTm>
+      <NbOfTxs>${totalCount}</NbOfTxs>
+      <CtrlSum>${totalSum.toFixed(2)}</CtrlSum>
+      <InitgPty/>
+    </GrpHdr>
+${pmtInfBlocks.join('\n')}
+  </CstmrCdtTrfInitn>
+</Document>
+`;
+}
+
+function handleFile(file) {
+  document.getElementById('fileName').textContent = file.name;
+  document.getElementById('parseError').innerHTML = '';
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = parseROI(reader.result);
+      if (!parsed.orders.length) {
+        document.getElementById('parseError').innerHTML =
+          '<div class="error-box">Nu am găsit niciun ordin de plată (marcaj „:20:") în acest fișier. Verifică dacă e într-adevăr un fișier .ROI.</div>';
+        document.getElementById('resultsCard').style.display = 'none';
+        return;
+      }
+      currentRows = buildRows(parsed);
+
+      const h05 = parsed.header['05'] || [];
+      headerInfo.payerName = sanitizeBrdText(h05[0] || '');
+      headerInfo.payerCui = (h05[1] || '').replace(/\D/g, '');
+      const firstGood = currentRows.find(r => !r._wrongSourceBank) || currentRows[0];
+      headerInfo.payerIban = firstGood ? firstGood.SourceIBAN : '';
+
+      document.getElementById('payerName').value = headerInfo.payerName;
+      document.getElementById('payerCui').value = headerInfo.payerCui;
+      document.getElementById('payerIban').value = headerInfo.payerIban;
+
+      document.getElementById('resultsCard').style.display = 'block';
+      renderTable();
+    } catch (err) {
+      document.getElementById('parseError').innerHTML =
+        `<div class="error-box">Eroare la citirea fișierului: ${err.message}</div>`;
+    }
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+dropzone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+['dragenter', 'dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+['payerName', 'payerCui', 'payerIban'].forEach(id => {
+  document.getElementById(id).addEventListener('input', (e) => {
+    headerInfo[id] = e.target.value;
+  });
+});
+
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  const missingCui = currentRows.some(r => !r._excluded && r.Treasury && !r.BeneficiaryCUI.trim());
+  if (missingCui) {
+    if (!confirm('Există plăți către Trezorerie fără CUI/CNP beneficiar completat. BRD va respinge acel fișier. Continui totuși descărcarea (ca să corectezi manual în XML), sau anulezi ca să completezi în tabel?')) {
+      return;
+    }
+  }
+  const xml = rowsToXml(currentRows, headerInfo);
+  const blob = new Blob([xml], { type: 'application/xml;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `plati_brd_${stamp}.xml`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('excludeUnknownBtn').addEventListener('click', () => {
+  currentRows.forEach(r => { if (r._wrongSourceBank) r._excluded = true; });
+  renderTable();
+});
+</script>
+</body>
+</html>

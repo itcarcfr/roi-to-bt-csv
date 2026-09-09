@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ROI → CSV pentru Banca Transilvania</title>
+<title>ROI/CSV → CSV pentru Banca Transilvania</title>
 <style>
   :root {
     --bg: #f4f6f8;
@@ -105,13 +105,14 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Convertor ROI → CSV Banca Transilvania</h1>
-  <p class="subtitle">Încarcă un fișier .ROI, verifică rândurile generate, corectează manual ce e nevoie, apoi descarcă CSV-ul gata de încărcat în BT Go. Totul se procesează local, în acest browser — niciun fișier nu este trimis pe un server.</p>
+  <div style="font-size:13px;margin-bottom:16px;"><a href="brd.html" style="color:#0b5347;text-decoration:none;font-weight:600;">Convertor ROI → XML pentru BRD →</a></div>
+  <h1>Convertor ROI/CSV → CSV Banca Transilvania</h1>
+  <p class="subtitle">Încarcă un fișier <strong>.ROI</strong> sau un CSV vechi de plăți, verifică rândurile generate, corectează manual ce e nevoie, apoi descarcă CSV-ul gata de încărcat în BT Go. Formatul fișierului e recunoscut automat. Totul se procesează local, în acest browser — niciun fișier nu este trimis pe un server.</p>
 
   <div class="card">
     <div class="dropzone" id="dropzone">
-      <div>📄 Trage aici fișierul <strong>.ROI</strong> sau apasă ca să-l alegi</div>
-      <input type="file" id="fileInput" accept=".roi,.txt">
+      <div>📄 Trage aici fișierul <strong>.ROI</strong> sau <strong>.csv</strong> (formatul vechi) sau apasă ca să-l alegi</div>
+      <input type="file" id="fileInput" accept=".roi,.txt,.csv">
       <div class="file-name" id="fileName"></div>
     </div>
     <div id="parseError"></div>
@@ -225,6 +226,111 @@ function parseROI(text) {
     }
   }
   return { header, orders };
+}
+
+// Detecteaza automat tipul fisierului de intrare: ROI (marcaje ":20:", ":32A:" etc.)
+// sau CSV vechi (linie de antet cu multe coloane separate prin ";").
+function detectFormat(text) {
+  if (/^:\d{2}[A-Z]?:/m.test(text)) return 'roi';
+  const firstLine = (text.split(/\r\n|\r|\n/)[0] || '');
+  if (splitCsvLine(firstLine, ';').length >= 8) return 'oldcsv';
+  return 'unknown';
+}
+
+// Separator CSV simplu, cu suport pentru campuri intre ghilimele (in caz ca vreo
+// exportare viitoare le foloseste) - fisierele vazute pana acum nu au ghilimele.
+function splitCsvLine(line, delim) {
+  const result = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === delim) {
+      result.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseOldCsv(text) {
+  const lines = text.split(/\r\n|\r|\n/).filter(l => l.trim() !== '');
+  if (!lines.length) return [];
+  const headerCols = splitCsvLine(lines[0], ';').map(h => h.trim());
+  const records = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitCsvLine(lines[i], ';');
+    if (cols.length < 2) continue;
+    const rec = {};
+    headerCols.forEach((h, j) => { rec[h] = (cols[j] || '').trim(); });
+    records.push(rec);
+  }
+  return records;
+}
+
+// Cautare tolerantă la majuscule/spații - fișierele viitoare de acest tip ar
+// putea avea antetul scris usor diferit fata de exemplul curent.
+function csvField(rec, name) {
+  const key = Object.keys(rec).find(k => k.trim().toLowerCase() === name.toLowerCase());
+  return key ? rec[key] : '';
+}
+
+// Suma vine deja formatata (ex. "1840.00"), dar acceptam si "1840,00" cu virgula
+function parseAmount(raw) {
+  if (!raw) return '';
+  const num = parseFloat(String(raw).trim().replace(',', '.'));
+  return isNaN(num) ? '' : num.toFixed(2);
+}
+
+function parseUrgent(raw) {
+  const v = String(raw || '').trim().toUpperCase();
+  return (v === 'DA' || v === 'YES' || v === 'T' || v === 'TRUE') ? 'T' : 'F';
+}
+
+function buildRowsFromOldCsv(records) {
+  const rows = [];
+  for (const rec of records) {
+    const sourceBankCode = csvField(rec, 'Banca platitor').toUpperCase();
+    const beneficiaryBankCode = csvField(rec, 'Banca beneficiar').toUpperCase();
+    const knownSourceBank = sourceBankCode in bicMap;
+    const knownBenefBank = beneficiaryBankCode in bicMap;
+    // "0" e valoarea folosita in acest export pentru persoane fizice (fara CUI) - o tratam ca lipsa
+    const rawFiscalCode = csvField(rec, 'CUI/CNP beneficiar').trim();
+    const fiscalCode = (rawFiscalCode === '0' || !rawFiscalCode) ? '' : rawFiscalCode;
+
+    rows.push({
+      OrderNumber: csvField(rec, 'Numar ordin'),
+      SourceAccountNumber: csvField(rec, 'IBAN platitor'),
+      TargetAccountNumber: csvField(rec, 'Cont beneficiar'),
+      BeneficiaryName: sanitizeText(csvField(rec, 'Nume beneficiar')),
+      BeneficiaryBankBIC: bicMap[beneficiaryBankCode] || '',
+      BeneficiaryFiscalCode: fiscalCode,
+      Amount: parseAmount(csvField(rec, 'Suma')),
+      PaymentRef1: sanitizeText(csvField(rec, 'Detalii 1')),
+      PaymentRef2: sanitizeText(csvField(rec, 'Detalii 2')),
+      ValueDate: yymmddToDate(csvField(rec, 'Data')),
+      Urgent: parseUrgent(csvField(rec, 'Urgent')),
+      _sourceBankCode: sourceBankCode,
+      _beneficiaryBankCode: beneficiaryBankCode,
+      _knownSourceBank: knownSourceBank,
+      _knownBenefBank: knownBenefBank,
+      _wrongSourceBank: sourceBankCode !== 'BTRL',
+      _excluded: false,
+    });
+  }
+  return rows;
 }
 
 function extractIban(rawLine) {
@@ -401,14 +507,34 @@ function handleFile(file) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const parsed = parseROI(reader.result);
-      if (!parsed.orders.length) {
+      const text = reader.result;
+      const format = detectFormat(text);
+
+      if (format === 'roi') {
+        const parsed = parseROI(text);
+        if (!parsed.orders.length) {
+          document.getElementById('parseError').innerHTML =
+            '<div class="error-box">Nu am găsit niciun ordin de plată (marcaj „:20:") în acest fișier. Verifică dacă e într-adevăr un fișier .ROI.</div>';
+          document.getElementById('resultsCard').style.display = 'none';
+          return;
+        }
+        currentRows = buildRows(parsed);
+      } else if (format === 'oldcsv') {
+        const records = parseOldCsv(text);
+        if (!records.length) {
+          document.getElementById('parseError').innerHTML =
+            '<div class="error-box">Nu am găsit niciun rând de plată în acest CSV. Verifică fișierul.</div>';
+          document.getElementById('resultsCard').style.display = 'none';
+          return;
+        }
+        currentRows = buildRowsFromOldCsv(records);
+      } else {
         document.getElementById('parseError').innerHTML =
-          '<div class="error-box">Nu am găsit niciun ordin de plată (marcaj „:20:") în acest fișier. Verifică dacă e într-adevăr un fișier .ROI.</div>';
+          '<div class="error-box">Nu am recunoscut formatul acestui fișier — nu pare nici .ROI, nici CSV-ul vechi cunoscut. Trimite-l ca să adaug suport pentru el.</div>';
         document.getElementById('resultsCard').style.display = 'none';
         return;
       }
-      currentRows = buildRows(parsed);
+
       document.getElementById('resultsCard').style.display = 'block';
       renderTable();
     } catch (err) {
