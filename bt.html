@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROI/CSV → CSV pentru Banca Transilvania</title>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --card: #ffffff;
+    --text: #1c2733;
+    --muted: #5b6b7a;
+    --border: #d7dee4;
+    --accent: #0f6b5c;
+    --accent-dark: #0b5347;
+    --warn-bg: #fff4e5;
+    --warn-border: #f0b429;
+    --err-bg: #fdecec;
+    --err-border: #e5484d;
+    --ok-bg: #e8f7f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 36px 20px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .dropzone.drag { border-color: var(--accent); background: var(--ok-bg); }
+  .dropzone input { display: none; }
+  .dropzone strong { color: var(--accent-dark); }
+  .file-name { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .note {
+    font-size: 13px;
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 14px 0 0;
+  }
+  .error-box {
+    font-size: 13px;
+    background: var(--err-bg);
+    border: 1px solid var(--err-border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 14px 0 0;
+    color: #8a1c1c;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; }
+  th { background: #eef2f5; position: sticky; top: 0; }
+  td[contenteditable="true"] { background: #fbfdfe; cursor: text; }
+  td[contenteditable="true"]:focus { outline: 2px solid var(--accent); background: #fff; }
+  .table-scroll { overflow-x: auto; max-height: 520px; overflow-y: auto; border-radius: 8px; }
+  .row-bad { background: var(--err-bg) !important; }
+  .row-warn { background: var(--warn-bg) !important; }
+  .row-excluded { opacity: .4; text-decoration: line-through; }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  button {
+    font: inherit;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 16px;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+  button.secondary { background: #e3e8ec; color: var(--text); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .stat { font-size: 13px; color: var(--muted); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 100px; font-size: 11px; font-weight: 700; }
+  .badge-ok { background: var(--ok-bg); color: var(--accent-dark); }
+  .badge-warn { background: var(--warn-bg); color: #8a5a00; }
+  .badge-err { background: var(--err-bg); color: #8a1c1c; }
+  .legend { font-size: 12px; color: var(--muted); margin-top: 10px; display: flex; gap: 16px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 30px; }
+  .bic-editor { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .bic-editor input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font: inherit; width: 110px; }
+  .checkbox-cell { text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="font-size:13px;margin-bottom:16px;"><a href="index.html" style="color:#0b5347;text-decoration:none;font-weight:600;">← Alege alt tip de plată (BT / BRD)</a></div>
+  <h1>Convertor ROI/CSV → CSV Banca Transilvania</h1>
+  <p class="subtitle">Încarcă un fișier <strong>.ROI</strong> sau un CSV vechi de plăți, verifică rândurile generate, corectează manual ce e nevoie, apoi descarcă CSV-ul gata de încărcat în BT Go. Formatul fișierului e recunoscut automat. Totul se procesează local, în acest browser — niciun fișier nu este trimis pe un server.</p>
+
+  <div class="card">
+    <div class="dropzone" id="dropzone">
+      <div>📄 Trage aici fișierul <strong>.ROI</strong> sau <strong>.csv</strong> (formatul vechi) sau apasă ca să-l alegi</div>
+      <input type="file" id="fileInput" accept=".roi,.txt,.csv">
+      <div class="file-name" id="fileName"></div>
+    </div>
+    <div id="parseError"></div>
+  </div>
+
+  <div class="card" id="resultsCard" style="display:none;">
+    <div class="toolbar">
+      <span class="stat" id="statSummary"></span>
+      <button id="downloadBtn">⬇ Descarcă CSV</button>
+      <button class="secondary" id="excludeUnknownBtn">Exclude rândurile cu bancă necunoscută</button>
+    </div>
+    <div class="table-scroll">
+      <table id="previewTable">
+        <thead>
+          <tr>
+            <th></th>
+            <th>OrderNumber</th>
+            <th>SourceAccountNumber</th>
+            <th>TargetAccountNumber</th>
+            <th>BeneficiaryName</th>
+            <th>BeneficiaryBankBIC</th>
+            <th>BeneficiaryFiscalCode</th>
+            <th>Amount</th>
+            <th>PaymentRef1</th>
+            <th>PaymentRef2</th>
+            <th>ValueDate</th>
+            <th>Urgent</th>
+          </tr>
+        </thead>
+        <tbody id="previewBody"></tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--err-bg);border:1px solid var(--err-border)"></span> cont sursă la altă bancă decât BT — nu trebuie inclus în acest fișier</span>
+      <span><span class="swatch" style="background:var(--warn-bg);border:1px solid var(--warn-border)"></span> cod de bancă necunoscut — completează manual BIC-ul</span>
+    </div>
+    <div class="note">
+      <strong>De verificat înainte de încărcare în BT:</strong> suma (Amount) este calculată direct din cifrele fișierului ROI, presupunând RON întregi fără bani (ex. „7130" → 7130.00). Dacă vreo sumă din ROI are de fapt bani/subunități, corecteaz-o manual în tabel — apasă direct pe celulă și scrie valoarea corectă. De asemenea, virgula „,” și punct-și-virgulă „;” sunt eliminate automat din textele libere (Detalii plată, Nume beneficiar), pentru că fișierul BT nu le acceptă în interiorul unui câmp.
+    </div>
+    <div class="bic-editor" id="bicEditor"></div>
+  </div>
+
+  <footer>Format oficial BT: OrderNumber, SourceAccountNumber, TargetAccountNumber, BeneficiaryName, BeneficiaryBankBIC, BeneficiaryFiscalCode, Amount, PaymentRef1, PaymentRef2, ValueDate, Urgent — separator virgulă.</footer>
+</div>
+
+<script>
+// Cod de banca (4 litere din ROI) -> BIC complet folosit de modelul oficial BT.
+// Poate fi extins direct de utilizator din interfata (se salveaza in acest browser).
+const DEFAULT_BIC_MAP = {
+  BTRL: 'BTRLRO22XXX',
+  TREZ: 'TREZROBUXXX',
+  RNCB: 'RNCBROBUXXX',
+  BRDE: 'BRDEROBUXXX',
+  INGB: 'INGBROBUXXX',
+  RZBR: 'RZBRROBUXXX',
+  CECE: 'CECEROBUXXX',
+  BPOS: 'BPOSROBUXXX',
+  PIRB: 'PIRBROBUXXX',
+  CRDB: 'CRDBROBUXXX',
+  UGBI: 'UGBIROBUXXX',
+};
+const STORAGE_KEY = 'roi2bt_bic_map_v1';
+
+function loadBicMap() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    return Object.assign({}, DEFAULT_BIC_MAP, saved);
+  } catch (e) {
+    return Object.assign({}, DEFAULT_BIC_MAP);
+  }
+}
+function saveBicMap(map) {
+  const extra = {};
+  for (const k in map) {
+    if (!(k in DEFAULT_BIC_MAP) || map[k] !== DEFAULT_BIC_MAP[k]) extra[k] = map[k];
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(extra));
+}
+let bicMap = loadBicMap();
+
+// elimina caracterele care sparg formatul CSV acceptat de BT (parserul lor nu suporta campuri intre ghilimele)
+function sanitizeText(value) {
+  return String(value || '').replace(/[;,]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function parseROI(text) {
+  const lines = text.split(/\r\n|\r|\n/);
+  const tagRe = /^:(\w{2}[A-Z]?):(.*)$/;
+  const entries = [];
+  for (const raw of lines) {
+    const m = raw.match(tagRe);
+    if (m) {
+      entries.push({ tag: m[1], lines: [m[2]] });
+    } else if (entries.length && raw.trim() !== '') {
+      entries[entries.length - 1].lines.push(raw.trim());
+    }
+  }
+  const header = {};
+  const orders = [];
+  let current = null;
+  for (const e of entries) {
+    if (e.tag === '20') {
+      current = { ref: e.lines[0].trim(), fields: {} };
+      orders.push(current);
+      continue;
+    }
+    if (!current) {
+      header[e.tag] = e.lines;
+    } else {
+      current.fields[e.tag] = e.lines;
+    }
+  }
+  return { header, orders };
+}
+
+// Detecteaza automat tipul fisierului de intrare: ROI (marcaje ":20:", ":32A:" etc.)
+// sau CSV vechi (linie de antet cu multe coloane separate prin ";").
+function detectFormat(text) {
+  if (/^:\d{2}[A-Z]?:/m.test(text)) return 'roi';
+  const firstLine = (text.split(/\r\n|\r|\n/)[0] || '');
+  if (splitCsvLine(firstLine, ';').length >= 8) return 'oldcsv';
+  return 'unknown';
+}
+
+// Separator CSV simplu, cu suport pentru campuri intre ghilimele (in caz ca vreo
+// exportare viitoare le foloseste) - fisierele vazute pana acum nu au ghilimele.
+function splitCsvLine(line, delim) {
+  const result = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === delim) {
+      result.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseOldCsv(text) {
+  const lines = text.split(/\r\n|\r|\n/).filter(l => l.trim() !== '');
+  if (!lines.length) return [];
+  const headerCols = splitCsvLine(lines[0], ';').map(h => h.trim());
+  const records = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitCsvLine(lines[i], ';');
+    if (cols.length < 2) continue;
+    const rec = {};
+    headerCols.forEach((h, j) => { rec[h] = (cols[j] || '').trim(); });
+    records.push(rec);
+  }
+  return records;
+}
+
+// Cautare tolerantă la majuscule/spații - fișierele viitoare de acest tip ar
+// putea avea antetul scris usor diferit fata de exemplul curent.
+function csvField(rec, name) {
+  const key = Object.keys(rec).find(k => k.trim().toLowerCase() === name.toLowerCase());
+  return key ? rec[key] : '';
+}
+
+// Suma vine deja formatata (ex. "1840.00"), dar acceptam si "1840,00" cu virgula
+function parseAmount(raw) {
+  if (!raw) return '';
+  const num = parseFloat(String(raw).trim().replace(',', '.'));
+  return isNaN(num) ? '' : num.toFixed(2);
+}
+
+function parseUrgent(raw) {
+  const v = String(raw || '').trim().toUpperCase();
+  return (v === 'DA' || v === 'YES' || v === 'T' || v === 'TRUE') ? 'T' : 'F';
+}
+
+function buildRowsFromOldCsv(records) {
+  const rows = [];
+  for (const rec of records) {
+    const sourceBankCode = csvField(rec, 'Banca platitor').toUpperCase();
+    const beneficiaryBankCode = csvField(rec, 'Banca beneficiar').toUpperCase();
+    const knownSourceBank = sourceBankCode in bicMap;
+    const knownBenefBank = beneficiaryBankCode in bicMap;
+    // "0" e valoarea folosita in acest export pentru persoane fizice (fara CUI) - o tratam ca lipsa
+    const rawFiscalCode = csvField(rec, 'CUI/CNP beneficiar').trim();
+    const fiscalCode = (rawFiscalCode === '0' || !rawFiscalCode) ? '' : rawFiscalCode;
+
+    rows.push({
+      OrderNumber: csvField(rec, 'Numar ordin'),
+      SourceAccountNumber: csvField(rec, 'IBAN platitor'),
+      TargetAccountNumber: csvField(rec, 'Cont beneficiar'),
+      BeneficiaryName: sanitizeText(csvField(rec, 'Nume beneficiar')),
+      BeneficiaryBankBIC: bicMap[beneficiaryBankCode] || '',
+      BeneficiaryFiscalCode: fiscalCode,
+      Amount: parseAmount(csvField(rec, 'Suma')),
+      PaymentRef1: sanitizeText(csvField(rec, 'Detalii 1')),
+      PaymentRef2: sanitizeText(csvField(rec, 'Detalii 2')),
+      ValueDate: yymmddToDate(csvField(rec, 'Data')),
+      Urgent: parseUrgent(csvField(rec, 'Urgent')),
+      _sourceBankCode: sourceBankCode,
+      _beneficiaryBankCode: beneficiaryBankCode,
+      _knownSourceBank: knownSourceBank,
+      _knownBenefBank: knownBenefBank,
+      _wrongSourceBank: sourceBankCode !== 'BTRL',
+      _excluded: false,
+    });
+  }
+  return rows;
+}
+
+function extractIban(rawLine) {
+  if (!rawLine) return '';
+  const m = rawLine.match(/[A-Z]{2}\d{2}[A-Z0-9]+/);
+  return m ? m[0] : rawLine.replace(/^\/[A-Z]\//, '').trim();
+}
+
+function yymmddToDate(s) {
+  if (!s || s.length < 6) return '';
+  const yy = s.slice(0, 2), mm = s.slice(2, 4), dd = s.slice(4, 6);
+  return `${dd}/${mm}/20${yy}`;
+}
+
+function buildRows(parsed) {
+  const rows = [];
+  for (const order of parsed.orders) {
+    const f = order.fields;
+    const line32A = (f['32A'] || [''])[0];
+    const dateStr = line32A.slice(0, 6);
+    const rest = line32A.slice(6);
+    const ccyMatch = rest.match(/^([A-Z]{3})(.*)$/);
+    const amountDigits = ccyMatch ? ccyMatch[2] : rest;
+    const amount = amountDigits ? `${parseInt(amountDigits, 10)}.00` : '';
+
+    const sourceIban = extractIban((f['52A'] || [])[0] || '');
+    const sourceBankCode = ((f['52A'] || [])[1] || '').trim().toUpperCase();
+
+    const beneficiaryLines59 = f['59'] || [];
+    const targetIban = extractIban(beneficiaryLines59[0] || '');
+    const beneficiaryName = sanitizeText(beneficiaryLines59.slice(1).join(' '));
+
+    const beneficiaryBankCode = ((f['57A'] || [])[0] || '').trim().toUpperCase();
+    const detailsText = sanitizeText((f['70'] || []).join(' '));
+
+    const knownSourceBank = sourceBankCode in bicMap;
+    const knownBenefBank = beneficiaryBankCode in bicMap;
+
+    rows.push({
+      OrderNumber: order.ref,
+      SourceAccountNumber: sourceIban,
+      TargetAccountNumber: targetIban,
+      BeneficiaryName: beneficiaryName,
+      BeneficiaryBankBIC: bicMap[beneficiaryBankCode] || '',
+      BeneficiaryFiscalCode: '',
+      Amount: amount,
+      PaymentRef1: detailsText,
+      PaymentRef2: '',
+      ValueDate: yymmddToDate(dateStr),
+      Urgent: 'F',
+      _sourceBankCode: sourceBankCode,
+      _beneficiaryBankCode: beneficiaryBankCode,
+      _knownSourceBank: knownSourceBank,
+      _knownBenefBank: knownBenefBank,
+      _wrongSourceBank: sourceBankCode !== 'BTRL',
+      _excluded: false,
+    });
+  }
+  return rows;
+}
+
+const COLUMNS = ['OrderNumber','SourceAccountNumber','TargetAccountNumber','BeneficiaryName','BeneficiaryBankBIC','BeneficiaryFiscalCode','Amount','PaymentRef1','PaymentRef2','ValueDate','Urgent'];
+
+let currentRows = [];
+
+function renderTable() {
+  const tbody = document.getElementById('previewBody');
+  tbody.innerHTML = '';
+  currentRows.forEach((row, idx) => {
+    const tr = document.createElement('tr');
+    if (row._wrongSourceBank) tr.classList.add('row-bad');
+    else if (!row._knownBenefBank) tr.classList.add('row-warn');
+    if (row._excluded) tr.classList.add('row-excluded');
+
+    const tdCheck = document.createElement('td');
+    tdCheck.className = 'checkbox-cell';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !row._excluded;
+    cb.title = 'Include în CSV';
+    cb.addEventListener('change', () => { row._excluded = !cb.checked; renderTable(); });
+    tdCheck.appendChild(cb);
+    tr.appendChild(tdCheck);
+
+    COLUMNS.forEach(col => {
+      const td = document.createElement('td');
+      td.contentEditable = 'true';
+      td.textContent = row[col];
+      td.addEventListener('input', () => { row[col] = sanitizeCell(col, td.textContent); });
+      td.addEventListener('blur', () => { td.textContent = row[col]; });
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+  updateSummary();
+  renderBicEditor();
+}
+
+function sanitizeCell(col, value) {
+  if (col === 'BeneficiaryName' || col === 'PaymentRef1' || col === 'PaymentRef2') {
+    return sanitizeText(value);
+  }
+  return String(value || '').trim();
+}
+
+function updateSummary() {
+  const total = currentRows.length;
+  const included = currentRows.filter(r => !r._excluded).length;
+  const wrongBank = currentRows.filter(r => r._wrongSourceBank).length;
+  const unknownBenef = currentRows.filter(r => !r._knownBenefBank).length;
+  let msg = `${total} plăți găsite în fișier, ${included} vor fi incluse în CSV.`;
+  if (wrongBank) msg += ` ⚠ ${wrongBank} au cont sursă la altă bancă decât BT (marcate roșu).`;
+  if (unknownBenef) msg += ` ⚠ ${unknownBenef} au un cod de bancă beneficiar necunoscut (marcate portocaliu) — completează BIC-ul lor mai jos.`;
+  document.getElementById('statSummary').textContent = msg;
+}
+
+function renderBicEditor() {
+  const unknownCodes = [...new Set(currentRows.filter(r => !r._knownBenefBank && r._beneficiaryBankCode).map(r => r._beneficiaryBankCode))];
+  const container = document.getElementById('bicEditor');
+  container.innerHTML = '';
+  if (!unknownCodes.length) return;
+  const label = document.createElement('div');
+  label.style.fontSize = '13px';
+  label.style.fontWeight = '600';
+  label.style.width = '100%';
+  label.textContent = 'Completează BIC pentru codurile de bancă necunoscute (se ține minte pe acest calculator pentru viitor):';
+  container.appendChild(label);
+  unknownCodes.forEach(code => {
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '6px';
+    const tag = document.createElement('span');
+    tag.textContent = code + ' →';
+    tag.style.fontWeight = '600';
+    const input = document.createElement('input');
+    input.placeholder = 'ex: XXXXROBUXXX';
+    input.addEventListener('change', () => {
+      const val = input.value.trim().toUpperCase();
+      if (!val) return;
+      bicMap[code] = val;
+      saveBicMap(bicMap);
+      currentRows.forEach(r => {
+        if (r._beneficiaryBankCode === code) {
+          r.BeneficiaryBankBIC = val;
+          r._knownBenefBank = true;
+        }
+      });
+      renderTable();
+    });
+    wrap.appendChild(tag);
+    wrap.appendChild(input);
+    container.appendChild(wrap);
+  });
+}
+
+function csvEscapeCheck(value) {
+  return /[;,]/.test(value);
+}
+
+function rowsToCsv(rows) {
+  const header = COLUMNS.join(',');
+  const lines = [header];
+  rows.filter(r => !r._excluded).forEach(row => {
+    lines.push(COLUMNS.map(c => row[c]).join(','));
+  });
+  return lines.join('\r\n') + '\r\n';
+}
+
+function handleFile(file) {
+  document.getElementById('fileName').textContent = file.name;
+  document.getElementById('parseError').innerHTML = '';
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const text = reader.result;
+      const format = detectFormat(text);
+
+      if (format === 'roi') {
+        const parsed = parseROI(text);
+        if (!parsed.orders.length) {
+          document.getElementById('parseError').innerHTML =
+            '<div class="error-box">Nu am găsit niciun ordin de plată (marcaj „:20:") în acest fișier. Verifică dacă e într-adevăr un fișier .ROI.</div>';
+          document.getElementById('resultsCard').style.display = 'none';
+          return;
+        }
+        currentRows = buildRows(parsed);
+      } else if (format === 'oldcsv') {
+        const records = parseOldCsv(text);
+        if (!records.length) {
+          document.getElementById('parseError').innerHTML =
+            '<div class="error-box">Nu am găsit niciun rând de plată în acest CSV. Verifică fișierul.</div>';
+          document.getElementById('resultsCard').style.display = 'none';
+          return;
+        }
+        currentRows = buildRowsFromOldCsv(records);
+      } else {
+        document.getElementById('parseError').innerHTML =
+          '<div class="error-box">Nu am recunoscut formatul acestui fișier — nu pare nici .ROI, nici CSV-ul vechi cunoscut. Trimite-l ca să adaug suport pentru el.</div>';
+        document.getElementById('resultsCard').style.display = 'none';
+        return;
+      }
+
+      document.getElementById('resultsCard').style.display = 'block';
+      renderTable();
+    } catch (err) {
+      document.getElementById('parseError').innerHTML =
+        `<div class="error-box">Eroare la citirea fișierului: ${err.message}</div>`;
+    }
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+dropzone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+['dragenter', 'dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  const csv = rowsToCsv(currentRows);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `plati_bt_${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('excludeUnknownBtn').addEventListener('click', () => {
+  currentRows.forEach(r => { if (r._wrongSourceBank) r._excluded = true; });
+  renderTable();
+});
+</script>
+</body>
+</html>
