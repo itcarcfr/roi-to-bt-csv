@@ -564,14 +564,14 @@ function buildPmtInf(rows, treasury, payer) {
   const stamp = nowStamp();
   const pmtInfId = `${stamp}PMT${treasury ? 'T' : 'C'}`;
 
-  const dbtrIdBlock = treasury ? `
+  const dbtrIdBlock = `
       <Id>
         <OrgId>
           <Othr>
             <Id>${xmlEscape(payer.payerCui)}</Id>
           </Othr>
         </OrgId>
-      </Id>` : '';
+      </Id>`;
 
   const dbtrAgtInner = treasury
     ? `<Othr>
@@ -698,6 +698,10 @@ document.getElementById('downloadBtn').addEventListener('click', () => {
   const missingBicRows = currentRows.filter(r => !r._excluded && !r.BeneficiaryBIC.trim());
   if (missingBicRows.length) {
     alert(`${missingBicRows.length} plată/plăți (${missingBicRows.map(r => r.ref).join(', ')}) nu au niciun BIC completat. BRD respinge întregul fișier când găsește un tag <BIC> gol — completează BIC-ul (vezi câmpurile portocalii/roșii de sub tabel) înainte să descarci.`);
+    return;
+  }
+  if (!headerInfo.payerCui || !headerInfo.payerCui.trim()) {
+    alert('Lipsește CUI-ul plătitorului (câmpul "CUI plătitor" de sus, lângă Nume plătitor). BRD respinge întregul fișier fără codul fiscal al asociației — completează-l înainte să descarci.');
     return;
   }
   const missingCui = currentRows.some(r => !r._excluded && r.Treasury && !r.BeneficiaryCUI.trim());
