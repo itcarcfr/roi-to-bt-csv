@@ -585,7 +585,7 @@ function buildPmtInf(rows, treasury, payer) {
   return { xml: `    <PmtInf>
       <PmtInfId>${pmtInfId}</PmtInfId>
       <PmtMtd>TRF</PmtMtd>
-      <BtchBookg>${treasury ? 'false' : 'true'}</BtchBookg>
+      <BtchBookg>false</BtchBookg>
       <NbOfTxs>${rows.length}</NbOfTxs>
       <CtrlSum>${total}</CtrlSum>
       <ReqdExctnDt>${mainDate}</ReqdExctnDt>
