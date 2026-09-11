@@ -110,7 +110,7 @@
 <div class="wrap">
   <div class="nav"><a href="index.html">← Alege alt tip de plată (BT / BRD)</a></div>
   <h1>Convertor ROI → XML pentru BRD</h1>
-  <p class="subtitle">Încarcă un fișier <strong>.ROI</strong>, verifică rândurile generate, corectează manual ce e nevoie, apoi descarcă XML-ul (format ISO 20022 pain.001.001.03, tip <strong>RXI</strong> — plăți RON și Trezorerie) gata de încărcat în BRD@ffice MultiX. Totul se procesează local, în acest browser — niciun fișier nu este trimis pe un server.</p>
+  <p class="subtitle">Încarcă un fișier <strong>.ROI</strong>, verifică rândurile generate, corectează manual ce e nevoie, apoi descarcă fișierul gata de încărcat în BRD@ffice MultiX — la alegere, <strong>XML</strong> (ISO 20022 pain.001.001.03, tip RXI) sau <strong>CSV</strong> (plăți naționale în RON, separator „;"). Totul se procesează local, în acest browser — niciun fișier nu este trimis pe un server.</p>
 
   <div class="card">
     <div class="dropzone" id="dropzone">
@@ -139,6 +139,7 @@
     <div class="toolbar">
       <span class="stat" id="statSummary"></span>
       <button id="downloadBtn">⬇ Descarcă XML</button>
+      <button id="downloadCsvBtn">⬇ Descarcă CSV</button>
       <button class="secondary" id="excludeUnknownBtn">Exclude rândurile cu cont sursă la altă bancă</button>
     </div>
     <div class="table-scroll">
@@ -718,6 +719,76 @@ document.getElementById('downloadBtn').addEventListener('click', () => {
   const stamp = new Date().toISOString().slice(0, 10);
   a.href = url;
   a.download = `plati_brd_${stamp}.xml`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+});
+
+// caracterele care sparg formatul CSV BRD (separator ";") - se elimina din campurile libere
+function sanitizeCsvText(value) {
+  return String(value || '').replace(/;/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// BRD cere suma cu virgula ca separator zecimal (spre deosebire de XML, unde e punct)
+function amountToComma(amountStr) {
+  return String(amountStr || '').replace('.', ',');
+}
+
+const BRD_CSV_COLUMNS = ['Banca platitor', 'IBAN Platitor', 'Nume platitor', 'Cod fiscal platitor', 'Banca beneficiar', 'IBAN Beneficiar', 'Nume Beneficiar', 'Cod fiscal beneficiar', 'Numar OP', 'Data', 'Valuta (RON)', 'Suma', 'Detalii 1', 'Detalii 2', 'Detalii 3', 'Detalii 4', 'Urgent', 'Plata buget'];
+
+function rowsToBrdCsv(rows, payer) {
+  const header = BRD_CSV_COLUMNS.join(';');
+  const lines = [header];
+  rows.filter(r => !r._excluded).forEach(row => {
+    const line = [
+      'BRDE',
+      sanitizeCsvText(row.SourceIBAN),
+      sanitizeCsvText(payer.payerName),
+      sanitizeCsvText(payer.payerCui),
+      sanitizeCsvText(row._beneficiaryBankCode),
+      sanitizeCsvText(row.TargetIBAN),
+      sanitizeCsvText(row.BeneficiaryName),
+      row.Treasury ? sanitizeCsvText(row.BeneficiaryCUI) : '',
+      sanitizeCsvText(row.ref),
+      '',
+      'RON',
+      amountToComma(row.Amount),
+      sanitizeCsvText(row.Details),
+      '',
+      '',
+      '',
+      row.Urgent === 'T' ? 'Yes' : '',
+      row.Treasury ? 'Yes' : '',
+    ];
+    lines.push(line.join(';'));
+  });
+  return lines.join('\r\n') + '\r\n';
+}
+
+document.getElementById('downloadCsvBtn').addEventListener('click', () => {
+  const missingBankCodeRows = currentRows.filter(r => !r._excluded && !r._beneficiaryBankCode.trim());
+  if (missingBankCodeRows.length) {
+    alert(`${missingBankCodeRows.length} plată/plăți (${missingBankCodeRows.map(r => r.ref).join(', ')}) nu au codul băncii beneficiare completat (coloana "Banca beneficiar"). Completează-l manual în tabel (ex. BRDE, TREZ, BACX) înainte să descarci CSV-ul.`);
+    return;
+  }
+  if (!headerInfo.payerCui || !headerInfo.payerCui.trim()) {
+    alert('Lipsește CUI-ul plătitorului (câmpul "CUI plătitor" de sus). Completează-l înainte să descarci.');
+    return;
+  }
+  const missingCui = currentRows.some(r => !r._excluded && r.Treasury && !r.BeneficiaryCUI.trim());
+  if (missingCui) {
+    if (!confirm('Există plăți către Trezorerie fără CUI/CNP beneficiar completat — la CSV acest câmp e obligatoriu pentru Trezorerie. Continui totuși descărcarea (ca să corectezi manual în CSV), sau anulezi ca să completezi în tabel?')) {
+      return;
+    }
+  }
+  const csv = rowsToBrdCsv(currentRows, headerInfo);
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `plati_brd_${stamp}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
