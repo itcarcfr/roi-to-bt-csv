@@ -223,11 +223,11 @@ function xmlEscape(value) {
     .replace(/>/g, '&gt;');
 }
 
-// caracterele permise de BRD (vezi sheet "Reguli generale"): litere fara diacritice, cifre, / - ? : ( ) . , ' + spatiu
+// caracterele permise de BRD la incarcare (eroare reala la upload): A-Z, a-z, 0-9, blank, * + # . - _ / \ ^
 function sanitizeBrdText(value) {
   return String(value || '')
     .normalize('NFD').replace(/[̀-ͯ]/g, '') // scoate diacriticele (ă -> a, ș -> s etc.)
-    .replace(/[^A-Za-z0-9/\-?:().,'+ ]/g, ' ')
+    .replace(/[^A-Za-z0-9 *+#.\-_/\\^]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -591,7 +591,7 @@ function buildPmtInf(rows, treasury, payer) {
       <CtrlSum>${total}</CtrlSum>
       <ReqdExctnDt>${mainDate}</ReqdExctnDt>
       <Dbtr>
-        <Nm>${xmlEscape(payer.payerName)}</Nm>${dbtrIdBlock}
+        <Nm>${xmlEscape(sanitizeBrdText(payer.payerName))}</Nm>${dbtrIdBlock}
       </Dbtr>
       <DbtrAcct>
         <Id>
